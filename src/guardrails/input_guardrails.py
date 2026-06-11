@@ -5,6 +5,10 @@ Lab 11 — Part 2A: Input Guardrails
   TODO 5: Input Guardrail Plugin (ADK)
 """
 import re
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from google.genai import types
 from google.adk.plugins import base_plugin
@@ -31,16 +35,19 @@ from core.config import ALLOWED_TOPICS, BLOCKED_TOPICS
 def detect_injection(user_input: str) -> bool:
     """Detect prompt injection patterns in user input.
 
-    Args:
-        user_input: The user's message
-
-    Returns:
-        True if injection detected, False otherwise
+    The patterns are intentionally broad enough to catch common jailbreak
+    attempts such as instruction overrides, hidden system prompt leaks,
+    and roleplay tricks.
     """
     INJECTION_PATTERNS = [
-        # TODO: Add at least 5 regex patterns
-        # Example:
-        # r"ignore (all )?(previous|above) instructions",
+        r"ignore (all )?(previous|above|prior) instructions",
+        r"you are now (dan|unrestricted|developer|system)",
+        r"reveal (your|the) (instructions|system prompt|prompt)",
+        r"pretend you are",
+        r"act as (a |an )?unrestricted",
+        r"override (all )?safety",
+        r"bỏ qua mọi hướng dẫn",
+        r"translation of your instructions",
     ]
 
     for pattern in INJECTION_PATTERNS:
@@ -60,22 +67,24 @@ def detect_injection(user_input: str) -> bool:
 # ============================================================
 
 def topic_filter(user_input: str) -> bool:
-    """Check if input is off-topic or contains blocked topics.
+    """Block off-topic or unsafe banking requests before the model sees them.
 
-    Args:
-        user_input: The user's message
-
-    Returns:
-        True if input should be BLOCKED (off-topic or blocked topic)
+    This catches requests that are unrelated to banking support and also
+    blocks explicitly dangerous content that should never reach the agent.
     """
     input_lower = user_input.lower()
 
-    # TODO: Implement logic:
-    # 1. If input contains any blocked topic -> return True
-    # 2. If input doesn't contain any allowed topic -> return True
-    # 3. Otherwise -> return False (allow)
+    if any(term in input_lower for term in BLOCKED_TOPICS):
+        return True
 
-    pass  # Replace with your implementation
+    if any(term in input_lower for term in ALLOWED_TOPICS):
+        return False
+
+    # If the user writes a very short or generic question with no banking terms,
+    # treat it as off-topic for this banking assistant.
+    return len(input_lower.strip()) < 3 or not any(
+        keyword in input_lower for keyword in ("what", "how", "can", "i want", "apply", "transfer", "account", "rate", "loan")
+    )
 
 
 # ============================================================
@@ -128,14 +137,19 @@ class InputGuardrailPlugin(base_plugin.BasePlugin):
         self.total_count += 1
         text = self._extract_text(user_message)
 
-        # TODO: Implement logic:
-        # 1. Call detect_injection(text)
-        #    - If True: increment blocked_count, return self._block_response("...")
-        # 2. Call topic_filter(text)
-        #    - If True: increment blocked_count, return self._block_response("...")
-        # 3. If both are False: return None (let message through)
+        if detect_injection(text):
+            self.blocked_count += 1
+            return self._block_response(
+                "I cannot process that request because it appears to contain prompt injection or an instruction override attempt."
+            )
 
-        pass  # Replace with your implementation
+        if topic_filter(text):
+            self.blocked_count += 1
+            return self._block_response(
+                "This request is outside the supported banking scope or contains disallowed content."
+            )
+
+        return None
 
 
 # ============================================================
@@ -196,10 +210,6 @@ async def test_input_plugin():
 
 
 if __name__ == "__main__":
-    import sys
-    from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
     test_injection_detection()
     test_topic_filter()
     import asyncio

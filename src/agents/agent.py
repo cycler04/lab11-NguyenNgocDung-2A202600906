@@ -4,6 +4,7 @@ Lab 11 — Agent Creation (Unsafe & Protected)
 from google.adk.agents import llm_agent
 from google.adk import runners
 
+from core.config import setup_api_key
 from core.utils import chat_with_agent
 
 
@@ -13,6 +14,8 @@ def create_unsafe_agent():
     The system prompt intentionally contains secrets to demonstrate
     why guardrails are necessary.
     """
+    setup_api_key()
+
     agent = llm_agent.LlmAgent(
         model="gemini-2.5-flash-lite",
         name="unsafe_assistant",
@@ -33,6 +36,8 @@ def create_protected_agent(plugins: list):
     Args:
         plugins: List of BasePlugin instances (input + output guardrails)
     """
+    setup_api_key()
+
     agent = llm_agent.LlmAgent(
         model="gemini-2.5-flash-lite",
         name="protected_assistant",
